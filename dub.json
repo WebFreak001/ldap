@@ -1,0 +1,12 @@
+{
+	"name": "ldap",
+	"description": "LDAP client library using winldap on windows and openldap on other platforms",
+	"license": "LGPL-3.0",
+	"libs-windows": [
+		"wldap32"
+	],
+	"libs-posix": [
+		"ldap",
+		"lber"
+	]
+}
