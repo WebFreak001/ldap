@@ -8,5 +8,6 @@
 	"libs-posix": [
 		"ldap",
 		"lber"
-	]
+	],
+	"systemDependencies": "On Windows you need to compile your program with --arch=x86_64 or --arch=x86_mscoff for linking to work."
 }
