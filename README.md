@@ -22,7 +22,7 @@ if (proto_version == 2)
 ldap.bind("admin@localhost", "");
 
 auto arr = ldap.search("OU=data,DC=data,DC=local",
-		LDAP_SCOPE_SUBTREE, "(|(objectClass=contact)(objectClass=user))", ["l"]); // find all users & contacts
+		LDAPSearchScope.subTree, "(|(objectClass=contact)(objectClass=user))", ["l"]); // find all users & contacts
 
 writefln("Found %s results", arr.length);
 foreach (r; arr)
