@@ -1,3 +1,4 @@
+///
 module ldap;
 
 import std.algorithm;
@@ -6,6 +7,7 @@ import std.conv;
 import std.string;
 import std.utf;
 
+///
 class LDAPException : Exception
 {
 	this(string msg, string file = __FILE__, size_t line = __LINE__) pure nothrow @nogc @safe
@@ -19,6 +21,7 @@ version (Windows)
 	public import core.sys.windows.winldap;
 	public import core.sys.windows.winber;
 
+	//dfmt off
 	private enum LDAPErrorCodes
 	{ // Taken from core.sys.windows.winldap
 		LDAP_SUCCESS = 0x00,
@@ -86,6 +89,7 @@ version (Windows)
 		LDAP_CLIENT_LOOP,
 		LDAP_REFERRAL_LIMIT_EXCEEDED // = 0x61
 	}
+	//dfmt on
 
 	string ldapWinErrorToString(uint err) pure nothrow @safe
 	{
@@ -99,12 +103,14 @@ version (Windows)
 		}
 	}
 
+	/// Exception thrown if a connection cannot be established to the LDAP server.
 	class LDAPConnectionException : LDAPException
 	{
 		this(string host, uint errCode, string file = __FILE__, size_t line = __LINE__)
 		{
-			super("Failed to connect to " ~ host ~ ": " ~ errCode.ldap_err2string.to!string ~ " (Error code "
-					~ errCode.to!string ~ ", " ~ errCode.ldapWinErrorToString ~ ")", file, line);
+			super("Failed to connect to " ~ host ~ ": " ~ errCode.ldap_err2string.to!string
+					~ " (Error code " ~ errCode.to!string ~ ", " ~ errCode.ldapWinErrorToString ~ ")",
+					file, line);
 		}
 	}
 
@@ -114,8 +120,7 @@ version (Windows)
 		auto ret = f();
 		if (ret != LDAP_SUCCESS)
 			throw new LDAPException("LDAP Error '" ~ ret.ldap_err2string.to!string ~ "' in " ~ fn
-					~ " (Error code " ~ ret.to!string ~ ", " ~ ret.ldapWinErrorToString ~ ")",
-					file, line);
+					~ " (Error code " ~ ret.to!string ~ ", " ~ ret.ldapWinErrorToString ~ ")", file, line);
 	}
 
 	enum LDAP_OPT_FAST_CONCURRENT_BIND = 0x41;
@@ -132,8 +137,7 @@ version (Windows)
 
 	uint ldapBind(PLDAP _handle, string user, string cred, int method)
 	{
-		return ldap_bind_sW(_handle, cast(wchar*) user.toUTF16z,
-				cast(wchar*) cred.toUTF16z, method);
+		return ldap_bind_sW(_handle, cast(wchar*) user.toUTF16z, cast(wchar*) cred.toUTF16z, method);
 	}
 }
 else
@@ -173,8 +177,8 @@ else
 	extern (C) void* ldap_next_entry(void* ld, void* entry);
 	extern (C) char* ldap_get_dn(void* ld, void* entry);
 	extern (C) int ldap_search_ext_s(void* ld, const char* base, int _scope, const char* filter,
-			char** attrs, int attrsonly, LDAPControl** serverctrls,
-			LDAPControl** clientctrls, timeval* timeout, int sizelimit, void** res); // LDAPMessage
+			char** attrs, int attrsonly, LDAPControl** serverControls,
+			LDAPControl** clientControls, timeval* timeout, int sizeLimit, void** res); // LDAPMessage
 	extern (C) char* ldap_first_attribute(void* ld, void* entry, void** ber);
 	extern (C) char* ldap_next_attribute(void* ld, void* entry, void* ber);
 	extern (C) char** ldap_get_values(void* ld, void* entry, char* attr);
@@ -186,8 +190,7 @@ else
 	alias ldap_unbind_s = ldap_unbind;
 
 	enum LDAP_SCOPE_BASE = 0x0000, LDAP_SCOPE_BASEOBJECT = LDAP_SCOPE_BASE,
-			LDAP_SCOPE_ONELEVEL = 0x0001, LDAP_SCOPE_ONE = LDAP_SCOPE_ONELEVEL,
-			LDAP_SCOPE_SUBTREE = 0x0002,
+			LDAP_SCOPE_ONELEVEL = 0x0001, LDAP_SCOPE_ONE = LDAP_SCOPE_ONELEVEL, LDAP_SCOPE_SUBTREE = 0x0002,
 			LDAP_SCOPE_SUB = LDAP_SCOPE_SUBTREE, LDAP_SCOPE_SUBORDINATE = 0x0003, /* OpenLDAP extension */
 			LDAP_SCOPE_CHILDREN = LDAP_SCOPE_SUBORDINATE, LDAP_SCOPE_DEFAULT = -1; /* OpenLDAP extension */
 
@@ -232,8 +235,17 @@ else
 	}
 }
 
+enum LDAPSearchScope : uint
+{
+	base_ = LDAP_SCOPE_BASE,
+	oneLevel = LDAP_SCOPE_ONELEVEL,
+	subTree = LDAP_SCOPE_SUBTREE
+}
+
+/// LDAP class to do any kind of search in the directory.
 struct LDAPConnection
 {
+	/// Pointer to internal (platform-dependent) connection handle. Use with care.
 	PLDAP _handle;
 
 	/// Connects to the LDAP server using the given host.
@@ -268,45 +280,62 @@ struct LDAPConnection
 		unbind();
 	}
 
+	/// Terminates the connection.
 	void unbind()
 	{
 		ldap_unbind_s(_handle);
 	}
 
+	/// Sets an option to an arbitrary value (See https://msdn.microsoft.com/en-us/library/aa366993(v=vs.85).aspx)
 	void setOption(int option, void* value)
 	{
 		enforceLDAP!"setOption"(ldap_set_option(_handle, option, value));
 	}
 
+	/// Returns the current value of an option.
 	void getOption(int option, void* value)
 	{
 		enforceLDAP!"getOption"(ldap_get_option(_handle, option, value));
 	}
 
+	/// Synchronously authenticates a client to the LDAP server.
+	/// Throws: a LDAPException on failure.
 	void bind(string user, string cred, int method = LDAP_AUTH_SIMPLE)
 	{
 		enforceLDAP!"bind"(ldapBind(_handle, user, cred, method));
 	}
 
-	SearchResult[] search(string search_base, int search_scope,
-			string search_filter = "(objectClass=*)", string[] search_attrs = null,
-			int attrsonly = 0, mPLDAPControl serverctrls = null,
-			mPLDAPControl clientctrls = null, PLDAP_TIMEVAL timeout = null, int sizelimit = 0)
+	/// Synchronously search the LDAP directory and return entries with attributes.
+	/// Params:
+	///   searchBase = String that contains the distinguished name of the entry at which to start the search. (For Example OU=data,DC=data,DC=local)
+	///   searchScope = Scope to search in (base, oneLevel, subTree)
+	///   filters = Filters to apply on the results. See https://msdn.microsoft.com/en-us/library/aa746475(v=vs.85).aspx
+	///   attrs = Array to strings which attributes to return. Pass null for all.
+	///   attrsonly = Boolean that should be false if both attribute types and values are to be returned. true for only types.
+	///   serverControls = A list of LDAP server controls.
+	///   clientControls = A list of client controls.
+	///   timeout = Combined search and server operation timelimit.
+	///   sizeLimit = limit of the number of entries to return. 0 for unlimited.
+	/// Returns: Entries with the requested attributes.
+	SearchResult[] search(string searchBase, LDAPSearchScope searchScope,
+			string filter = "(objectClass=*)", string[] attrs = null,
+			bool attrsonly = false, mPLDAPControl serverControls = null,
+			mPLDAPControl clientControls = null, PLDAP_TIMEVAL timeout = null, int sizeLimit = 0)
 	{
 		PLDAPMessage res;
 		scope (failure)
 			if (res)
 				ldap_msgfree(res);
 		version (Windows)
-			enforceLDAP!"search"(ldap_search_ext_sW(_handle, cast(wchar*) search_base.toUTF16z, search_scope,
-					cast(wchar*) search_filter.toUTF16z, search_attrs is null ? null
-					: (search_attrs.map!(a => cast(wchar*) a.toUTF16z).array ~ null).ptr,
-					attrsonly, &serverctrls, &clientctrls, timeout, sizelimit, &res));
+			enforceLDAP!"search"(ldap_search_ext_sW(_handle, cast(wchar*) searchBase.toUTF16z,
+					cast(uint) searchScope, cast(wchar*) filter.toUTF16z, attrs is null
+					? null : (attrs.map!(a => cast(wchar*) a.toUTF16z).array ~ null).ptr,
+					attrsonly ? 1 : 0, &serverControls, &clientControls, timeout, sizeLimit, &res));
 		else
-			enforceLDAP!"search"(ldap_search_ext_s(_handle, cast(char*) search_base.toStringz, search_scope,
-					cast(char*) search_filter.toStringz, search_attrs is null ? null
-					: (search_attrs.map!(a => cast(char*) a.toStringz).array ~ null).ptr,
-					attrsonly, &serverctrls, &clientctrls, timeout, sizelimit, &res));
+			enforceLDAP!"search"(ldap_search_ext_s(_handle, cast(char*) searchBase.toStringz,
+					cast(uint) searchScope, cast(char*) filter.toStringz, attrs is null
+					? null : (attrs.map!(a => cast(char*) a.toStringz).array ~ null).ptr,
+					attrsonly ? 1 : 0, &serverControls, &clientControls, timeout, sizeLimit, &res));
 		SearchResult[] results;
 		results.length = cast(size_t) ldap_count_entries(_handle, res);
 		PLDAPMessage entry;
@@ -381,8 +410,10 @@ struct SearchResult
 	string[][string] attributes;
 }
 
+/// Struct to check if credentials are able to authenticate on the LDAP server.
 struct LDAPAuthenticationEngine
 {
+	/// Pointer to internal (platform-dependent) connection handle. Use with care.
 	PLDAP _handle;
 
 	/// Connects to the LDAP server using the given host.
@@ -418,21 +449,26 @@ struct LDAPAuthenticationEngine
 		unbind();
 	}
 
+	/// Terminates the connection.
 	void unbind()
 	{
 		ldap_unbind_s(_handle);
 	}
 
+	/// Sets an option to an arbitrary value (See https://msdn.microsoft.com/en-us/library/aa366993(v=vs.85).aspx)
 	void setOption(int option, void* value)
 	{
 		enforceLDAP!"setOption"(ldap_set_option(_handle, option, value));
 	}
 
+	/// Returns the current value of an option.
 	void getOption(int option, void* value)
 	{
 		enforceLDAP!"getOption"(ldap_get_option(_handle, option, value));
 	}
 
+	/// Checks if a user can login with the credentials. (username should be in format `username`, `username@DOMAIN` or `DOMAIN\username`)
+	/// Attempts to bind with the credentials using simple auth and returns true if it was successful.
 	bool check(string user, string cred)
 	{
 		return ldapBind(_handle, user, cred, LDAP_AUTH_SIMPLE) == LDAP_SUCCESS;

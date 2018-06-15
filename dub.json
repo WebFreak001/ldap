@@ -1,7 +1,7 @@
 {
 	"name": "ldap",
 	"description": "LDAP client library using winldap on windows and openldap on other platforms",
-	"license": "LGPL-3.0",
+	"license": "MIT",
 	"libs-windows": [
 		"wldap32"
 	],
