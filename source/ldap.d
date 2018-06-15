@@ -16,6 +16,28 @@ class LDAPException : Exception
 	}
 }
 
+/// If username has a domain specified, this will split it into a username and domain and return them in a string array.
+/// Params:
+///   username: username to split if domain is specified
+/// Returns: string array with username for the first member and domain for the second. Domain is an empty string if not in the username
+private string[] domainSplit(string username)
+{
+    import std.array : split;
+	import std.algorithm.mutation : reverse;
+
+    auto ret = username.split("@");
+
+    if (ret.length == 2)
+        return ret;
+
+    ret = username.split("\\");
+
+    if (ret.length == 2)
+		return ret.reverse;
+
+    return [username, ""];
+}
+
 version (Windows)
 {
 	public import core.sys.windows.winldap;
@@ -137,7 +159,31 @@ version (Windows)
 
 	uint ldapBind(PLDAP _handle, string user, string cred, int method)
 	{
-		return ldap_bind_sW(_handle, cast(wchar*) user.toUTF16z, cast(wchar*) cred.toUTF16z, method);
+		if (method == LDAP_AUTH_SIMPLE)
+			return ldap_bind_sW(_handle, cast(wchar*) user.toUTF16z, cast(wchar*) cred.toUTF16z, method);
+		else
+		{
+			// for encrypting the credentials, domain must be specified in the username (DOMAIN\username or username@DOMAIN) if this is used
+			import core.sys.windows.rpcdce;
+
+			auto userAndDomain = user.domainSplit();
+
+			string _user = userAndDomain[0];
+			string _domain = userAndDomain[1];
+
+			SEC_WINNT_AUTH_IDENTITY id =
+			SEC_WINNT_AUTH_IDENTITY(
+				cast(ushort*) _user.toUTF16z, // User
+				cast(uint) _user.length, //UserLength
+				cast(ushort*) _domain, //Domain
+				cast(uint) _domain.length, //DomainLength
+				cast(ushort*) cred.toUTF16z, //Password
+				cast(uint) cred.length, //PasswordLength
+				SEC_WINNT_AUTH_IDENTITY_UNICODE // flags
+			);
+
+			return ldap_bind_sW(_handle, null, cast(wchar*) &id, method);
+		}
 	}
 }
 else
@@ -231,7 +277,31 @@ else
 
 	uint ldapBind(PLDAP _handle, string user, string cred, int method)
 	{
-		return ldap_bind_s(_handle, user.toStringz, cred.toStringz, method);
+		if (method == LDAP_AUTH_SIMPLE)
+			return ldap_bind_s(_handle, user.toStringz, cred.toStringz, method);
+		else
+		{
+			// for encrypting the credentials
+			import core.sys.windows.rpcdce;
+
+			auto userAndDomain = user.domainSplit();
+
+			string _user = userAndDomain[0];
+			string _domain = userAndDomain[1];
+
+			SEC_WINNT_AUTH_IDENTITY id =
+			SEC_WINNT_AUTH_IDENTITY(
+				cast(ushort*) _user.toStringz, // User
+				cast(uint) _user.length, //UserLength
+				cast(ushort*) _domain, //Domain
+				cast(uint) _domain.length, //DomainLength
+				cast(ushort*) cred.toStringz, //Password
+				cast(uint) cred.length, //PasswordLength
+				SEC_WINNT_AUTH_IDENTITY_ANSI// flags	
+			);
+
+			return ldap_bind_s(_handle, null, cast(wchar*) &id, method);
+		}
 	}
 }
 
@@ -251,7 +321,7 @@ struct LDAPConnection
 	/// Connects to the LDAP server using the given host.
 	/// Params:
 	///     host: Host name and port separated with a colon (:)
-	this(string host)
+    this(string host, bool encrypted = true;)
 	{
 		version (Windows)
 		{
@@ -415,12 +485,15 @@ struct LDAPAuthenticationEngine
 {
 	/// Pointer to internal (platform-dependent) connection handle. Use with care.
 	PLDAP _handle;
+	private bool encrypted;
 
 	/// Connects to the LDAP server using the given host.
 	/// Params:
 	///     host: Host name and port separated with a colon (:)
-	this(string host)
+	///     encrypted: If true, credentials are encrypted when sent to be authenticated
+	this(string host, bool encrypted)
 	{
+		this.encrypted = encrypted;
 		version (Windows)
 		{
 		}
@@ -439,9 +512,10 @@ struct LDAPAuthenticationEngine
 	/// Connects to the LDAP server by trying every host until it can find one.
 	/// Params:
 	///     hosts: List of host names and ports separated with a colon (:)
-	this(string[] hosts)
+	///     encrypted: If true, credentials are encrypted when sent to be authenticated
+	this(string[] hosts, bool encrypted)
 	{
-		this(hosts.join(' '));
+		this(hosts.join(' '), encrypted);
 	}
 
 	~this()
@@ -467,10 +541,12 @@ struct LDAPAuthenticationEngine
 		enforceLDAP!"getOption"(ldap_get_option(_handle, option, value));
 	}
 
-	/// Checks if a user can login with the credentials. (username should be in format `username`, `username@DOMAIN` or `DOMAIN\username`)
-	/// Attempts to bind with the credentials using simple auth and returns true if it was successful.
+	/// Checks if a user can login with the credentials. (username should be in format `username`, `username@DOMAIN`or `DOMAIN\username`). Attempts to bind with the credentials using simple auth if encrypted was specified as false, else will use NTLM. Username must contain DOMAIN if encrypted was specified as true. Returns true if it was successful.
 	bool check(string user, string cred)
 	{
-		return ldapBind(_handle, user, cred, LDAP_AUTH_SIMPLE) == LDAP_SUCCESS;
+		if (encrypted)
+			return ldapBind(_handle, user, cred, LDAP_AUTH_NTLM) == LDAP_SUCCESS;
+		else
+			return ldapBind(_handle, user, cred, LDAP_AUTH_SIMPLE) == LDAP_SUCCESS;
 	}
 }
