@@ -173,11 +173,11 @@ version (Windows)
 			SEC_WINNT_AUTH_IDENTITY id =
 			SEC_WINNT_AUTH_IDENTITY(
 				cast(ushort*) _user.toUTF16z, // User
-				cast(ulong) _user.length, //UserLength
+				cast(uint) _user.length, //UserLength
 				cast(ushort*) _domain, //Domain
-				cast(ulong) _domain.length, //DomainLength
+				cast(uint) _domain.length, //DomainLength
 				cast(ushort*) cred.toUTF16z, //Password
-				cast(ulong) cred.length, //PasswordLength
+				cast(uint) cred.length, //PasswordLength
 				SEC_WINNT_AUTH_IDENTITY_UNICODE // flags
 			);
 
@@ -208,15 +208,15 @@ else
 	alias PLDAPMessage = void*;
 	alias PLDAP = void*;
 
-	struct SEC_WINNT_AUTH_IDENTITY 
+	struct SEC_WINNT_AUTH_IDENTITY
 	{
-		ushort* User;
-		ulong UserLength;
-		ushort* Domain;
-		ulong DomainLength;
-		ushort* Password;
-		ulong PasswordLength;
-		ulong Flags;
+		ubyte* User;
+		uint UserLength;
+		ubyte* Domain;
+		uint DomainLength;
+		ubyte* Password;
+		uint PasswordLength;
+		uint Flags;
 	};
 
 	extern (C) void ldap_msgfree(void*);
@@ -252,12 +252,14 @@ else
 
 	enum LDAP_SUCCESS = 0;
 	enum LDAP_AUTH_SIMPLE = 0x80U;
-	enum LDAP_AUTH_NTLM = 0x1086U; 
+	enum LDAP_AUTH_NTLM = 0x1086U;
 	enum void* LDAP_OPT_OFF = null, LDAP_OPT_ON = cast(void*) 1;
 
 	enum LDAP_OPT_PROTOCOL_VERSION = 0x0011U;
 	enum LDAP_OPT_FAST_CONCURRENT_BIND = 0x41;
 	alias PLDAP_TIMEVAL = timeval*;
+
+	enum SEC_WINNT_AUTH_IDENTITY_ANSI=0x1;
 
 	class LDAPConnectionException : LDAPException
 	{
@@ -299,16 +301,16 @@ else
 
 			SEC_WINNT_AUTH_IDENTITY id =
 			SEC_WINNT_AUTH_IDENTITY(
-				cast(ushort*) _user.toStringz, // User
-				cast(ulong) _user.length, //UserLength
-				cast(ushort*) _domain, //Domain
-				cast(ulong) _domain.length, //DomainLength
-				cast(ushort*) cred.toStringz, //Password
-				cast(ulong) cred.length, //PasswordLength
-				SEC_WINNT_AUTH_IDENTITY_ANSI// flags	
+				cast(ubyte*) _user.toStringz, // User
+				cast(uint) _user.length, //UserLength
+				cast(ubyte*) _domain, //Domain
+				cast(uint) _domain.length, //DomainLength
+				cast(ubyte*) cred.toStringz, //Password
+				cast(uint) cred.length, //PasswordLength
+				SEC_WINNT_AUTH_IDENTITY_ANSI // flags
 			);
 
-			return ldap_bind_s(_handle, null, &id, method);
+			return ldap_bind_s(_handle, null, cast(char*) &id, method);
 		}
 	}
 }
@@ -329,7 +331,7 @@ struct LDAPConnection
 	/// Connects to the LDAP server using the given host.
 	/// Params:
 	///     host: Host name and port separated with a colon (:)
-    this(string host)
+	this(string host)
 	{
 		version (Windows)
 		{
