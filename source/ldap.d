@@ -19,23 +19,24 @@ class LDAPException : Exception
 /// If username has a domain specified, this will split it into a username and domain and return them in a string array.
 /// Params:
 ///   username: username to split if domain is specified
-/// Returns: string array with username for the first member and domain for the second. Domain is an empty string if not in the username
-private string[] domainSplit(string username)
+///   user: out parameter that will receive the username
+///   domain: out parameter that will receive the domain. Empty if domain is not part of username
+void domainSplit(string username, out string user, out string domain)
 {
-    import std.array : split;
-	import std.algorithm.mutation : reverse;
+	import std.algorithm.searching : findSplit;
 
-    auto ret = username.split("@");
-
-    if (ret.length == 2)
-        return ret;
-
-    ret = username.split("\\");
-
-    if (ret.length == 2)
-		return ret.reverse;
-
-    return [username, ""];
+	if (auto ret = username.findSplit("@"))
+	{
+		user = ret[0];
+		domain = ret[2];
+	}
+	else if (auto ret = username.findSplit("\\"))
+	{
+		user = ret[2];
+		domain = ret[0];
+	}
+	else
+		user = username;
 }
 
 version (Windows)
@@ -161,24 +162,22 @@ version (Windows)
 	{
 		if (method == LDAP_AUTH_SIMPLE)
 			return ldap_bind_sW(_handle, cast(wchar*) user.toUTF16z, cast(wchar*) cred.toUTF16z, method);
-		else
+		else // implies NTLM for now
 		{
 			// for encrypting the credentials, domain must be specified in the username (DOMAIN\username or username@DOMAIN) if this is used
 			import core.sys.windows.rpcdce;
+			string _user, _domain;
 
-			auto userAndDomain = user.domainSplit();
-
-			string _user = userAndDomain[0];
-			string _domain = userAndDomain[1];
+			user.domainSplit(_user, _domain);
 
 			SEC_WINNT_AUTH_IDENTITY id =
 			SEC_WINNT_AUTH_IDENTITY(
 				cast(ushort*) _user.toUTF16z, // User
-				cast(uint) _user.length, //UserLength
+				cast(ulong) _user.length, //UserLength
 				cast(ushort*) _domain, //Domain
-				cast(uint) _domain.length, //DomainLength
+				cast(ulong) _domain.length, //DomainLength
 				cast(ushort*) cred.toUTF16z, //Password
-				cast(uint) cred.length, //PasswordLength
+				cast(ulong) cred.length, //PasswordLength
 				SEC_WINNT_AUTH_IDENTITY_UNICODE // flags
 			);
 
@@ -208,6 +207,17 @@ else
 
 	alias PLDAPMessage = void*;
 	alias PLDAP = void*;
+
+	struct SEC_WINNT_AUTH_IDENTITY 
+	{
+		ushort* User;
+		ulong UserLength;
+		ushort* Domain;
+		ulong DomainLength;
+		ushort* Password;
+		ulong PasswordLength;
+		ulong Flags;
+	};
 
 	extern (C) void ldap_msgfree(void*);
 	extern (C) void ldap_memfree(void*);
@@ -242,6 +252,7 @@ else
 
 	enum LDAP_SUCCESS = 0;
 	enum LDAP_AUTH_SIMPLE = 0x80U;
+	enum LDAP_AUTH_NTLM = 0x1086U; 
 	enum void* LDAP_OPT_OFF = null, LDAP_OPT_ON = cast(void*) 1;
 
 	enum LDAP_OPT_PROTOCOL_VERSION = 0x0011U;
@@ -282,25 +293,22 @@ else
 		else
 		{
 			// for encrypting the credentials
-			import core.sys.windows.rpcdce;
+			string _user, _domain;
 
-			auto userAndDomain = user.domainSplit();
-
-			string _user = userAndDomain[0];
-			string _domain = userAndDomain[1];
+			user.domainSplit(_user, _domain);
 
 			SEC_WINNT_AUTH_IDENTITY id =
 			SEC_WINNT_AUTH_IDENTITY(
 				cast(ushort*) _user.toStringz, // User
-				cast(uint) _user.length, //UserLength
+				cast(ulong) _user.length, //UserLength
 				cast(ushort*) _domain, //Domain
-				cast(uint) _domain.length, //DomainLength
+				cast(ulong) _domain.length, //DomainLength
 				cast(ushort*) cred.toStringz, //Password
-				cast(uint) cred.length, //PasswordLength
+				cast(ulong) cred.length, //PasswordLength
 				SEC_WINNT_AUTH_IDENTITY_ANSI// flags	
 			);
 
-			return ldap_bind_s(_handle, null, cast(wchar*) &id, method);
+			return ldap_bind_s(_handle, null, &id, method);
 		}
 	}
 }
@@ -321,7 +329,7 @@ struct LDAPConnection
 	/// Connects to the LDAP server using the given host.
 	/// Params:
 	///     host: Host name and port separated with a colon (:)
-    this(string host, bool encrypted = true;)
+    this(string host)
 	{
 		version (Windows)
 		{
@@ -505,7 +513,7 @@ struct LDAPAuthenticationEngine
 		version (Windows)
 		{
 			enforceLDAP!"connect"(ldap_connect(_handle, null));
-			setOption(LDAP_OPT_FAST_CONCURRENT_BIND, LDAP_OPT_ON);
+			setOption(encrypted ? LDAP_OPT_ENCRYPT : LDAP_OPT_FAST_CONCURRENT_BIND, LDAP_OPT_ON);
 		}
 	}
 
@@ -544,9 +552,6 @@ struct LDAPAuthenticationEngine
 	/// Checks if a user can login with the credentials. (username should be in format `username`, `username@DOMAIN`or `DOMAIN\username`). Attempts to bind with the credentials using simple auth if encrypted was specified as false, else will use NTLM. Username must contain DOMAIN if encrypted was specified as true. Returns true if it was successful.
 	bool check(string user, string cred)
 	{
-		if (encrypted)
-			return ldapBind(_handle, user, cred, LDAP_AUTH_NTLM) == LDAP_SUCCESS;
-		else
-			return ldapBind(_handle, user, cred, LDAP_AUTH_SIMPLE) == LDAP_SUCCESS;
+		return ldapBind(_handle, user, cred, encrypted ? LDAP_AUTH_NTLM : LDAP_AUTH_SIMPLE) == LDAP_SUCCESS;
 	}
 }
