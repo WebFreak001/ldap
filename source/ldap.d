@@ -174,7 +174,7 @@ version (Windows)
 			SEC_WINNT_AUTH_IDENTITY(
 				cast(ushort*) _user.toUTF16z, // User
 				cast(uint) _user.length, //UserLength
-				cast(ushort*) _domain, //Domain
+				cast(ushort*) _domain.toUTF16z, //Domain
 				cast(uint) _domain.length, //DomainLength
 				cast(ushort*) cred.toUTF16z, //Password
 				cast(uint) cred.length, //PasswordLength
@@ -303,7 +303,7 @@ else
 			SEC_WINNT_AUTH_IDENTITY(
 				cast(ubyte*) _user.toStringz, // User
 				cast(uint) _user.length, //UserLength
-				cast(ubyte*) _domain, //Domain
+				cast(ubyte*) _domain.toStringz, //Domain
 				cast(uint) _domain.length, //DomainLength
 				cast(ubyte*) cred.toStringz, //Password
 				cast(uint) cred.length, //PasswordLength
