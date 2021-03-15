@@ -2,6 +2,12 @@
 
 Cross platform Microsoft Active Directory client using LDAP (winldap on windows, openldap otherwise).
 
+---
+
+For **secure LDAP authentication** you will want to use [ldapauth](https://github.com/symmetryinvestments/ldapauth) instead.
+
+---
+
 Openldap implementation based off [dopenldap](https://github.com/ikod/dopenldap)
 
 ```d
