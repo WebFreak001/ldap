@@ -467,13 +467,11 @@ struct LDAPConnection
 					if (!iValue)
 						result.attributes[attr_name] = [];
 					else
-                        result.attributes[attr_name] = 
-                            ppValue[0 .. iValue].map!(a =>
-                                attr_name == "thumbnailPhoto" ?
-                                    a.bv_val[0..a.bv_len].to!(char[]).idup :
-                                    a.bv_val.to!(char[]).idup
-                            ).array;
-                
+						result.attributes[attr_name] = 
+							ppValue[0 .. iValue].map!(a =>
+								a.bv_val[0 .. a.bv_len].idup
+							).array;
+
 					ldap_value_free_len(ppValue);
 					ppValue = null;
 				}
