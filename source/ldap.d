@@ -222,7 +222,7 @@ else
 	extern (C) void ldap_msgfree(void*);
 	extern (C) void ldap_memfree(void*);
 	extern (C) void ber_free(void*, int);
-	extern (C) void ldap_value_free(char**);
+	extern (C) void ldap_value_free_len(BerValue**);
 
 	extern (C) int ldap_get_option(void* ld, int option, void* outvalue);
 	extern (C) int ldap_set_option(void* ld, int option, const void* invalue);
@@ -237,9 +237,9 @@ else
 			LDAPControl** clientControls, timeval* timeout, int sizeLimit, void** res); // LDAPMessage
 	extern (C) char* ldap_first_attribute(void* ld, void* entry, void** ber);
 	extern (C) char* ldap_next_attribute(void* ld, void* entry, void* ber);
-	extern (C) char** ldap_get_values(void* ld, void* entry, char* attr);
+	extern (C) BerValue** ldap_get_values_len(void* ld, void* entry, char* attr);
 	extern (C) int ldap_count_entries(PLDAP, void*);
-	extern (C) int ldap_count_values(char**);
+	extern (C) int ldap_count_values_len(BerValue**);
 
 	extern (C) int ldap_bind_s(void* ld, const char* who, const char* cred, int method);
 	extern (C) int ldap_unbind(void* ld);
@@ -456,20 +456,25 @@ struct LDAPConnection
 			{
 				string attr_name = attr.to!string;
 
-				auto ppValue = ldap_get_values(_handle, entry, attr);
+				auto ppValue = ldap_get_values_len(_handle, entry, attr);
 				if (!ppValue)
 				{
 					result.attributes[attr_name] = [];
 				}
 				else
 				{
-					auto iValue = ldap_count_values(ppValue);
+					auto iValue = ldap_count_values_len(ppValue);
 					if (!iValue)
 						result.attributes[attr_name] = [];
 					else
-						result.attributes[attr_name] = ppValue[0 .. iValue].map!(a => a.to!(char[])
-								.idup).array;
-					ldap_value_free(ppValue);
+                        result.attributes[attr_name] = 
+                            ppValue[0 .. iValue].map!(a =>
+                                attr_name == "thumbnailPhoto" ?
+                                    a.bv_val[0..a.bv_len].to!(char[]).idup :
+                                    a.bv_val.to!(char[]).idup
+                            ).array;
+                
+					ldap_value_free_len(ppValue);
 					ppValue = null;
 				}
 
